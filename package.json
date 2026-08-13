@@ -1,0 +1,18 @@
+{
+  "name": "colossal-cave-adventure",
+  "version": "0.1.0",
+  "description": "Faithful port of the original Crowther & Woods Colossal Cave Adventure (PDP-10 FORTRAN, 350-point) to Node.js.",
+  "type": "module",
+  "main": "src/index.mjs",
+  "bin": {
+    "gamayun": "src/index.mjs"
+  },
+  "scripts": {
+    "build": "node tools/build-dat.mjs",
+    "start": "node src/index.mjs",
+    "test": "node tools/build-dat.mjs >/dev/null && node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
