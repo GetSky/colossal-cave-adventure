@@ -1,10 +1,12 @@
 // I/O layer for the Adventure port.
 //
-// The original FORTRAN uses blocking ACCEPT (input) and TYPE (output).  Since the
-// target is a Node CLI, we mirror that with *synchronous* stdin reads (no async,
-// no generators), so the engine can be a near line-for-line port.  This module is
-// the only place that touches real file descriptors; the engine talks to an `io`
-// object, which makes it trivially mockable in tests.
+// The original FORTRAN uses blocking ACCEPT (input) and TYPE (output).  The
+// engine's phases await `io.getline()`; this CLI layer keeps input
+// *synchronous* (fs.readSync on stdin), so the engine can remain a near
+// line-for-line port -- awaiting a plain string is a no-op.  A web page
+// supplies its own io whose getline returns a Promise (see web/app.mjs).
+// This module is the only place that touches real file descriptors; the
+// engine talks to an `io` object, which makes it trivially mockable in tests.
 
 import fs from 'node:fs';
 

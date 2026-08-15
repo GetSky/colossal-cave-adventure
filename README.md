@@ -1,12 +1,37 @@
 # Colossal Cave Adventure (Node.js)
 
 A close, line-for-line JavaScript port of the original **Colossal Cave
-Adventure** (350 points, Crowther & Woods, PDP-10 FORTRAN) for Node.js.
+Adventure** (350 points, Crowther & Woods, PDP-10 FORTRAN) for Node.js —
+with a browser version that runs on GitHub Pages.
 
 The original sources (`advent.for`, `advent.dat`) are unchanged. The
 `advent.dat` data file is precompiled into `src/data.json` by a direct port of
 the FORTRAN loader; all game text, the map, vocabulary, and logic are ported
 1:1.
+
+## Web version
+
+The same engine runs in the browser: `index.html` + `web/` + `src/` are plain
+ES modules and JSON with no build step and no dependencies. Open it locally
+with any static server:
+
+```bash
+python3 -m http.server   # then open http://localhost:8000/
+```
+
+Every `git push` to `master` deploys the site via `.github/workflows/deploy.yml`
+(one-time setup: Settings → Pages → Source: **GitHub Actions**). The web version
+keeps the terminal aesthetic and adds:
+
+- English and Russian (`?lang=ru` or the language selector);
+- an automatic save after every turn — reloading the page continues exactly
+  where you left off (the transcript replays through the deterministic engine);
+- `SUSPEND`/`ПАУЗА` storing a snapshot, with a **Resume** button, like the
+  CLI's `--resume`;
+- command history on ↑/↓ and a mobile-friendly layout.
+
+The web input layer is unit-tested to be byte-for-byte equivalent to the CLI
+runs of the same command sequences (`test/web.test.mjs`).
 
 ## Requirements
 
@@ -28,7 +53,7 @@ node src/index.mjs
 Save and restore a game:
 
 ```bash
-# Type SUSPEND in the game; state is written to ~/.gamayun-save.json
+# Type SUSPEND in the game; state is written to ~/.adventure-save.json
 node src/index.mjs --resume   # resume the saved game
 ```
 
@@ -41,7 +66,7 @@ a launch argument:
 ```bash
 node src/index.mjs --lang=ru   # or: --lang ru | -l ru
 npm start -- --lang=ru
-gamayun --lang ru              # when installed via `npm i -g`
+advent --lang ru               # when installed via `npm i -g`
 ```
 
 - Without the argument the game is in English (byte-for-byte the historic
@@ -87,7 +112,7 @@ the five-character contract automatically), and translate the engine's UI
 ## Tests
 
 ```bash
-npm test          # RNG, 36-bit shift, .dat parser, engine, walkthrough, i18n
+npm test          # RNG, 36-bit shift, .dat parser, engine, walkthrough, i18n, web driver
 ```
 
 The tests compare database counters with the FORTRAN program's own report,
@@ -111,16 +136,21 @@ Comments include line numbers for tracing behavior back to the original.
 
 | File | Purpose | Corresponding `advent.for` code |
 |---|---|---|
-| `src/io.mjs` | Synchronous input/output (like `ACCEPT`/`TYPE`) | I/O |
+| `src/io.mjs` | Synchronous input/output for the CLI (like `ACCEPT`/`TYPE`) | I/O |
 | `src/bits.mjs` | `SHIFT` and 36-bit operations via BigInt | lines 2820–2838 |
 | `src/rng.mjs` | `RAN` PRNG (`R*1021 mod 1048576`) and `DATIME` | lines 2842–2898 |
 | `src/text.mjs` | `SPEAK`/`PSPEAK`/`RSPEAK`/`MSPEAK` | lines 1098–2170 |
 | `src/vocab.mjs` | `VOCAB` dictionary lookup | lines 2309–2337 |
-| `src/i18n.mjs` | Localization: `--lang` parsing, locale loading/overlay, string templates | — |
+| `src/i18n.mjs` | Localization: `--lang` parsing, locale overlay, string templates (pure, browser-safe) | — |
+| `src/i18n-node.mjs` | Node-only locale loading from `src/locales/` | — |
 | `tools/build-dat.mjs` | `advent.dat → data.json` precompiler | lines 1002–1100 |
 | `src/engine.mjs` | State, objects, main loop, verbs, dwarves, cave closing, scoring | main block + 2341–2451 |
 | `src/wizard.mjs` | `START`/`WIZARD`/`HOURS`/`MAINT`/`MOTD` (cave hours) | lines 2452–2816 |
 | `src/index.mjs` | CLI entry point | — |
+| `web/game.mjs` | Web session driver: promise-backed input queue, autosave/replay | — |
+| `web/app.mjs` | Web bootstrap: data/locale loading, toolbar, language | — |
+| `web/terminal.mjs` | Terminal UI: transcript, echo, input history | — |
+| `.github/workflows/deploy.yml` | Deploys `index.html` + `web/` + `src/` to GitHub Pages | — |
 
 **Control flow.** The main FORTRAN block is a tangle of roughly 30 numbered
 labels and `GOTO`s. Each label becomes a phase method (`L2000`, `L2600`,
@@ -128,10 +158,13 @@ labels and `GOTO`s. Each label becomes a phase method (`L2000`, `L2600`,
 them until `'STOP'`. This retains the original flow 1:1 without a `goto`
 emulation layer or a behavior-changing refactor.
 
-**Input/output.** Since the target is a Node.js CLI, input is synchronous
-(through `fs.readSync`), just like the blocking FORTRAN `ACCEPT`. The engine
-is an almost line-for-line port. At EOF, the game cleanly ends and calculates
-the score through an `EofSignal`.
+**Input/output.** The FORTRAN `ACCEPT` blocks until a line is typed. The
+engine's phases await `io.getline()`; the CLI layer keeps input synchronous
+(`fs.readSync`), so the engine remains a near line-for-line port — awaiting a
+plain string is a no-op. The web version supplies an io whose `getline`
+returns a Promise that resolves when the player submits a line, which lets
+the same unmodified engine run in a browser. At EOF (CLI only), the game
+cleanly ends and calculates the score through an `EofSignal`.
 
 ## Fidelity to the original
 
@@ -151,8 +184,12 @@ distribution), five-character input semantics, wizard mode, and cave hours.
 - Messages are stored as arrays of strings rather than one `LINES` array with
   pointers; `SPEAK` behavior (a blank line before a message and `>$<` as a
   suppression marker) is preserved.
-- `SUSPEND` serializes state to `~/.gamayun-save.json`; `--resume` restores
+- `SUSPEND` serializes state to `~/.adventure-save.json`; `--resume` restores
   it. `LATNCY` remains a field but does not block in this single-user program.
+  In the web version the same snapshot goes to `localStorage`, and an
+  automatic turn-by-turn autosave replays deterministically after a page
+  reload (the one wall-clock dependency — wizard `MAINT` cave hours — is not
+  part of the replay; hours configured there can differ after a reload).
 - Cave-hours behavior (`START`/`HOURS`/`MAINT`/wizard) works, but the cave is
   open all day by default (`WKDAY=0`). The original `WKDAY=0o00777400` would
   block play during business hours—a sensible setting on a shared 1977 system,

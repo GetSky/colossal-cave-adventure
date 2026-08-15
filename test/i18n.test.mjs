@@ -1,4 +1,4 @@
-// Tests for the localisation layer (src/i18n.mjs + src/locales/*.json).
+// Tests for the localisation layer (src/i18n.mjs + src/i18n-node.mjs + locales).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -6,7 +6,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createIo, scriptedInput } from '../src/io.mjs';
 import { Engine } from '../src/engine.mjs';
-import { resolveLang, loadLocale, applyLocale, localeOptions, fmt } from '../src/i18n.mjs';
+import { resolveLang, applyLocale, localeOptions, fmt } from '../src/i18n.mjs';
+import { loadLocale } from '../src/i18n-node.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const data = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'data.json'), 'utf8'));
@@ -91,18 +92,18 @@ test('every ru vocabExtra code exists in the English vocabulary', () => {
 
 // ---- engine behaviour with the locale applied ----
 
-function play(locale, cmds) {
+async function play(locale, cmds) {
   const gameData = applyLocale(data, locale);
   const out = [];
   const io = createIo({ input: scriptedInput(cmds), output: { write: (s) => out.push(s) } });
   const eng = new Engine(gameData, io, locale);
-  eng.run();
+  await eng.run();
   return { text: out.join(''), eng };
 }
 
-test('russian locale: welcome, movement and commands in Russian; YES/NO in Russian', () => {
+test('russian locale: welcome, movement and commands in Russian; YES/NO in Russian', async () => {
   const locale = loadLocale('ru');
-  const { text, eng } = play(locale, ['НЕТ', 'ВОЙТИ', 'ВОЗЬМИ ЛАМПУ', 'ИНВЕНТАРЬ', 'ВЫХОД', 'ДА']);
+  const { text, eng } = await play(locale, ['НЕТ', 'ВОЙТИ', 'ВОЗЬМИ ЛАМПУ', 'ИНВЕНТАРЬ', 'ВЫХОД', 'ДА']);
   assert.match(text, /ДОБРО ПОЖАЛОВАТЬ В ПРИКЛЮЧЕНИЕ/);
   assert.match(text, /ВЫ СТОИТЕ В КОНЦЕ ДОРОГИ ПЕРЕД НЕБОЛЬШИМ КИРПИЧНЫМ ДОМОМ/);
   assert.match(text, /ВЫ ВНУТРИ ЗДАНИЯ/);
@@ -112,15 +113,15 @@ test('russian locale: welcome, movement and commands in Russian; YES/NO in Russi
   assert.ok(eng.holdng === 1, 'the lamp was taken');
 });
 
-test('russian locale accepts English commands too', () => {
+test('russian locale accepts English commands too', async () => {
   const locale = loadLocale('ru');
-  const { text } = play(locale, ['НЕТ', 'ENTER', 'TAKE KEYS', 'INVENTORY', 'QUIT', 'ДА']);
+  const { text } = await play(locale, ['НЕТ', 'ENTER', 'TAKE KEYS', 'INVENTORY', 'QUIT', 'ДА']);
   assert.match(text, /СВЯЗКА КЛЮЧЕЙ/);
 });
 
-test('compass abbreviations: В/З/С/Ю and СВ..СЗ work in Russian', () => {
+test('compass abbreviations: В/З/С/Ю and СВ..СЗ work in Russian', async () => {
   const locale = loadLocale('ru');
-  const { text } = play(locale, ['НЕТ', 'ВОЙТИ', 'ВЫЙТИ', 'ВЫХОД', 'ДА']);
+  const { text } = await play(locale, ['НЕТ', 'ВОЙТИ', 'ВЫЙТИ', 'ВЫХОД', 'ДА']);
   // НАРУЖ (OUT) from inside the building must put us back at the road end.
   assert.match(text, /ВЫ ВНУТРИ ЗДАНИЯ/);
   assert.match(text, /ВЫ СНОВА В КОНЦЕ ДОРОГИ/);

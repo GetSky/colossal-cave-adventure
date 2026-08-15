@@ -1,0 +1,188 @@
+/* Colossal Cave Adventure -- retro terminal look: green phosphor on a near-black screen,
+   system monospace (no external fonts), a hint of CRT glow and scanlines. */
+
+:root {
+  --bg: #071007;
+  --bg-bar: #0a150a;
+  --ink: #6dff8b;
+  --ink-dim: #2f8f4c;
+  --ink-bright: #c9ffd6;
+  --amber: #ffb454;
+  --line: #1c3a24;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  /* The transcript is the only scroller on the page; the viewport itself
+     must never grow a scrollbar. */
+  overflow: hidden;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+/* ---- header bar ---- */
+
+.bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1em;
+  padding: 0.5em 1em;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-bar);
+  flex: none;
+}
+
+.brand {
+  color: var(--ink-bright);
+  letter-spacing: 0.35em;
+  text-shadow: 0 0 8px rgba(109, 255, 139, 0.35);
+  white-space: nowrap;
+}
+
+.brand .sub {
+  margin-left: 1em;
+  color: var(--ink-dim);
+  letter-spacing: 0.05em;
+  font-size: 0.75em;
+}
+
+.tools {
+  display: flex;
+  gap: 0.5em;
+}
+
+.tools button,
+.tools select {
+  font: inherit;
+  font-size: 0.8em;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  padding: 0.25em 0.75em;
+  cursor: pointer;
+}
+
+.tools button:hover:not(:disabled),
+.tools select:hover {
+  border-color: var(--ink-dim);
+  color: var(--ink-bright);
+}
+
+.tools button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ---- transcript ---- */
+
+#screen {
+  flex: 1;
+  width: 100%;
+  max-width: 85ch;
+  margin-left: auto;
+  margin-right: auto;
+  overflow-y: auto;
+  padding: 1em 1em 1.5em;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  text-shadow: 0 0 6px rgba(109, 255, 139, 0.18);
+  /* A terminal has no scrollbar: scrolling still works (wheel, touch,
+     keyboard), but nothing flickers while the transcript grows. */
+  scrollbar-width: none; /* Firefox */
+}
+#screen::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Edge */
+}
+
+#screen .echo {
+  color: var(--ink-bright);
+  font-weight: bold;
+}
+
+#screen .note {
+  color: var(--amber);
+}
+
+/* faint CRT scanlines over the whole page */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 2px,
+    rgba(0, 0, 0, 0.16) 3px,
+    transparent 4px
+  );
+}
+
+/* ---- input line ---- */
+
+#form {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.6em 1em 0.9em;
+  border-top: 1px solid var(--line);
+  background: var(--bg-bar);
+  flex: none;
+}
+
+#form .prompt {
+  color: var(--amber);
+  font-weight: bold;
+}
+
+#input {
+  flex: 1;
+  font: inherit;
+  color: var(--ink-bright);
+  background: transparent;
+  border: none;
+  outline: none;
+  caret-color: var(--amber);
+  min-width: 0; /* let flex shrink the input on narrow screens */
+}
+
+#form.idle .prompt {
+  visibility: hidden;
+}
+
+#input:disabled {
+  opacity: 0.35;
+}
+
+/* keep mobile keyboards comfortable */
+@media (max-width: 640px) {
+  #input {
+    font-size: 16px; /* prevents iOS zoom-on-focus */
+  }
+
+  .brand .sub {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto !important;
+  }
+}

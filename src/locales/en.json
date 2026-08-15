@@ -1,8 +1,16 @@
 {
   "name": "English",
-  "yesWords": ["YES", "Y"],
-  "noWords": ["NO", "N"],
-  "magics": ["DWARF"],
+  "yesWords": [
+    "YES",
+    "Y"
+  ],
+  "noWords": [
+    "NO",
+    "N"
+  ],
+  "magics": [
+    "DWARF"
+  ],
   "strings": {
     "pleaseAnswer": "Please answer the question.",
     "dwarvesMany": " There are {n} threatening little dwarves in the room with you.",
@@ -16,6 +24,7 @@
     "quitScore": " If you were to quit now, you would score{s:4} out of a possible{m:4}.",
     "suspend": " I can suspend your adventure for you so that you can resume later, but\n you will have to wait at least{n:3} minutes before continuing.",
     "saveFailed": " Save failed: {msg}",
+    "saveUnavailable": " Saving is not available here.",
     "resumeFailed": " Resume failed: {msg}",
     "scored": "You scored{s:4} out of a possible{m:4}, using{t:5} turns.",
     "offScale": " You just went off my scale!!",

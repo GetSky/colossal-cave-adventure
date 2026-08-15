@@ -7,21 +7,23 @@
 // the name of the next phase.  run() simply chains them until 'STOP'.
 // FORTRAN line numbers are cited in comments for traceability.
 
-import fs from 'node:fs';
-import path from 'node:path';
-import os from 'node:os';
 import { ran, datime as datimeFn } from './rng.mjs';
 import { createSpeaker } from './text.mjs';
 import { makeVocabLookup, norm } from './vocab.mjs';
 import { installWizard, EofSignal } from './wizard.mjs';
 import { localeOptions, fmt } from './i18n.mjs';
 
-const SAVE_PATH = path.join(os.homedir(), '.gamayun-save.json');
-
 export class Engine {
-  constructor(data, io, locale) {
+  // `locale` supplies the UI strings/yes-no words (see i18n.mjs); without one
+  // the engine still runs, but its own UI messages fall back to their keys.
+  // `onSave(json)` persists a SUSPEND snapshot; without it SUSPEND reports
+  // that saving is unavailable.  Everything else the engine needs arrives
+  // through `io`, which keeps the module free of Node- and browser-specific
+  // APIs (it runs unmodified in a CLI and in a web page).
+  constructor(data, io, locale, { onSave } = {}) {
     this.data = data;
     this.io = io;
+    this.onSave = onSave ?? null;
     const opts = localeOptions(locale);
     this.strings = opts.strings;
     this.yesWords = opts.yesWords;
@@ -302,10 +304,13 @@ export class Engine {
     this.speech.speak(lines);
   }
 
-  getin() {
+  // Input is awaited rather than blocking (io.getline may return a Promise,
+  // as in the web version), which lets the phase methods stay a line-for-line
+  // port while the whole loop suspends cleanly between inputs.
+  async getin() {
     if (this.speech.blklin) this.io.blank();
     while (true) {
-      const raw = this.io.getline();
+      const raw = await this.io.getline();
       if (raw === null) throw new EofSignal();
       const tokens = raw.toUpperCase().split(/\s+/).filter((t) => t.length > 0);
       if (tokens.length === 0) {
@@ -321,10 +326,10 @@ export class Engine {
   }
 
   // YES(X,Y,Z) -- port of YESX (lines 2255-2275)
-  yes(x, y, z) {
+  async yes(x, y, z) {
     while (true) {
       if (x) this.rspeak(x);
-      const r = this.getin();
+      const r = await this.getin();
       if (this.yesWords.includes(r.wd1)) {
         if (y) this.rspeak(y);
         return true;
@@ -359,17 +364,17 @@ export class Engine {
   // =====================================================================
   //  main loop
   // =====================================================================
-  run(start = 'L1') {
+  async run(start = 'L1') {
     let phase = start;
     try {
-      while (phase !== 'STOP') phase = this[phase]();
+      while (phase !== 'STOP') phase = await this[phase]();
     } catch (e) {
       if (!(e instanceof EofSignal)) throw e;
       // EOF: end the game with a score, like the original did on input EOF.
       this.gaveup = true;
       try {
         phase = 'L20000';
-        while (phase !== 'STOP') phase = this[phase]();
+        while (phase !== 'STOP') phase = await this[phase]();
       } catch (e2) {
         if (!(e2 instanceof EofSignal)) throw e2;
       }
@@ -377,11 +382,11 @@ export class Engine {
     return phase;
   }
 
-  L1() {
-    this.demo = this.start();
-    this.motd(false);
+  async L1() {
+    this.demo = await this.start();
+    await this.motd(false);
     ran(1);
-    this.hinted[3] = this.yes(65, 1, 0);
+    this.hinted[3] = await this.yes(65, 1, 0);
     this.newloc = 1;
     this.limit = this.hinted[3] ? 1000 : 330;
     return 'L2';
@@ -598,13 +603,13 @@ export class Engine {
     return 'L99';
   }
 
-  L99() {
+  async L99() {
     if (this.closng) {
       this.rspeak(131);
       this.numdie++;
       return 'L20000';
     }
-    const yea = this.yes(81 + this.numdie * 2, 82 + this.numdie * 2, 54);
+    const yea = await this.yes(81 + this.numdie * 2, 82 + this.numdie * 2, 54);
     this.numdie++;
     if (this.numdie === this.maxdie || !yea) return 'L20000';
     this.place[this.WATER] = 0;
@@ -629,13 +634,13 @@ export class Engine {
   }
 
   // ---- L2600: hints + read command (lines 843-871) ----
-  L2600() {
+  async L2600() {
     for (let hint = 4; hint <= this.data.hntmax; hint++) {
       if (this.hinted[hint]) continue;
       if (!this.bitset(this.loc, hint)) this.hintlc[hint] = -1;
       this.hintlc[hint]++;
       if (this.hintlc[hint] >= this.data.hints[hint].turns) {
-        const r = this.hintOffer(hint);
+        const r = await this.hintOffer(hint);
         if (r) return r;
       }
     }
@@ -648,11 +653,11 @@ export class Engine {
     this.wzdark = this.dark();
     if (this.knfloc > 0 && this.knfloc !== this.loc) this.knfloc = 0;
     ran(1);
-    this.getin();
+    await this.getin();
     return 'L2608';
   }
 
-  hintOffer(hint) {
+  async hintOffer(hint) {
     const h = this.data.hints[hint];
     let offer = false;
     switch (hint) {
@@ -684,18 +689,18 @@ export class Engine {
       return null;
     }
     this.hintlc[hint] = 0;
-    if (!this.yes(h.qmsg, 0, 54)) return null;
+    if (!(await this.yes(h.qmsg, 0, 54))) return null;
     this.io.println('');
     this.io.println(this.t('hintCost', { n: h.cost }));
-    this.hinted[hint] = this.yes(175, h.hmsg, 54);
+    this.hinted[hint] = await this.yes(175, h.hmsg, 54);
     if (this.hinted[hint] && this.limit > 30) this.limit += 30 * h.cost;
     return null;
   }
 
   // ---- L2608: foobar, clocks, lamp, word hacks (lines 873-908) ----
-  L2608() {
+  async L2608() {
     this.foobar = Math.min(0, -this.foobar);
-    if (this.turns === 0 && this.eq(this.wd1, 'MAGIC') && this.eq(this.wd2, 'MODE')) this.maint();
+    if (this.turns === 0 && this.eq(this.wd1, 'MAGIC') && this.eq(this.wd2, 'MODE')) await this.maint();
     this.turns++;
     if (this.demo && this.turns >= this.short) return 'L13000';
     if (this.verb === this.SAY && this.wd2 !== '') this.verb = 0;
@@ -1347,7 +1352,7 @@ export class Engine {
     }
     return this.attackTarget(obj);
   }
-  attackTarget(obj) {
+  async attackTarget(obj) {
     let spk = 0;
     if (obj === 0) spk = 44;
     if (obj === this.CLAM || obj === this.OYSTER) spk = 150;
@@ -1364,7 +1369,7 @@ export class Engine {
     this.rspeak(49);
     this.verb = 0;
     this.obj = 0;
-    this.getin();
+    await this.getin();
     if (!this.eq(this.wd1, 'Y') && !this.eq(this.wd1, 'YES')) return 'L2608';
     this.pspeak(this.DRAGON, 1);
     this.prop[this.DRAGON] = 2;
@@ -1518,8 +1523,8 @@ export class Engine {
   }
 
   // QUIT (8180)
-  vQuit() {
-    this.gaveup = this.yes(22, 54, 54);
+  async vQuit() {
+    this.gaveup = await this.yes(22, 54, 54);
     if (this.gaveup) return 'L20000';
     return 'L2012';
   }
@@ -1652,11 +1657,11 @@ export class Engine {
     this.scorng = true;
     return 'L20000';
   }
-  L8241() {
+  async L8241() {
     this.scorng = false;
     this.io.println('');
     this.io.println(this.t('quitScore', { s: this.score, m: this.mxscor }));
-    this.gaveup = this.yes(143, 54, 54);
+    this.gaveup = await this.yes(143, 54, 54);
     return 'L8185';
   }
   L8185() {
@@ -1710,7 +1715,7 @@ export class Engine {
     this.obj = obj;
     return this.vRead();
   }
-  vRead() {
+  async vRead() {
     if (this.dark()) return this.objectNotHere();
     const obj = this.obj;
     let spk = 0;
@@ -1722,7 +1727,7 @@ export class Engine {
       this.spk = spk;
       return 'L2011';
     }
-    this.hinted[2] = this.yes(192, 193, 54);
+    this.hinted[2] = await this.yes(192, 193, 54);
     return 'L2012';
   }
 
@@ -1759,14 +1764,14 @@ export class Engine {
   }
 
   // SUSPEND (8300)
-  vSuspend() {
+  async vSuspend() {
     if (this.demo) {
       this.spk = 201;
       return 'L2011';
     }
     this.io.println('');
     this.io.println(this.t('suspend', { n: this.latncy }));
-    if (!this.yes(200, 54, 54)) return 'L2012';
+    if (!(await this.yes(200, 54, 54))) return 'L2012';
     this.saveGame();
     return 'STOP';
   }
@@ -1786,8 +1791,12 @@ export class Engine {
       dkill: this.dkill, hinted: this.hinted, hintlc: this.hintlc, wzdark: this.wzdark,
       abbnnum: this.abbnnum, detail: this.detail,
     };
+    if (!this.onSave) {
+      this.io.println(this.t('saveUnavailable'));
+      return;
+    }
     try {
-      fs.writeFileSync(SAVE_PATH, JSON.stringify(state));
+      this.onSave(JSON.stringify(state));
       this.mspeak(32);
     } catch (e) {
       this.io.println(this.t('saveFailed', { msg: e.message }));
