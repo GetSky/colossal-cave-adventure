@@ -39,19 +39,29 @@ function normLang(s) {
 
 // Overlay a locale onto the compiled database.  Returns a *new* data object;
 // the original (English) data.json is never mutated.  Text sections are
-// replaced wholesale when the locale provides them; the vocabulary is the
-// English table plus the locale's synonyms (so English commands keep working).
+// replaced wholesale when the display locale provides them (English display
+// keeps the base text); the vocabulary is the English table plus the synonyms
+// of the display locale *and* every `extraLocales` -- so commands typed in any
+// bundled language keep parsing whichever language is displayed (a transcript
+// recorded in Russian replays identically under English text).
 // Locale vocabulary is stored in natural spelling -- it is normalised to the
 // A5 contract (upper-case, first 5 chars, blank-padded) here, mirroring how
 // tools/build-dat.mjs stores the English words.
-export function applyLocale(data, locale) {
-  if (!locale || locale.code === 'en') return data;
+export function applyLocale(data, locale, extraLocales = []) {
+  const display = locale && locale.code !== 'en' ? locale : null;
+  const vocabLocales = [...(display ? [display] : []), ...extraLocales].filter(
+    (l) => l && l.code !== 'en' && l.vocabExtra && l.vocabExtra.length > 0
+  );
+  if (!display && vocabLocales.length === 0) return data;
   const out = { ...data };
-  for (const sec of TEXT_SECTIONS) {
-    if (locale[sec] && Object.keys(locale[sec]).length > 0) out[sec] = locale[sec];
+  if (display) {
+    for (const sec of TEXT_SECTIONS) {
+      if (display[sec] && Object.keys(display[sec]).length > 0) out[sec] = display[sec];
+    }
   }
-  if (locale.vocabExtra && locale.vocabExtra.length > 0) {
-    out.vocab = data.vocab.concat(locale.vocabExtra.map((e) => ({ n: e.n, w: w5(e.w) })));
+  if (vocabLocales.length > 0) {
+    const extra = vocabLocales.flatMap((l) => l.vocabExtra.map((e) => ({ n: e.n, w: w5(e.w) })));
+    out.vocab = out.vocab.concat(extra);
   }
   return out;
 }
@@ -90,8 +100,9 @@ function slavicPluralIndex(n) {
 
 // Options bundle the engine needs from a locale.  Strings always fall back
 // to English (`locale.uiBase`, attached by whoever loaded the locales -- see
-// i18n-node.mjs / web); yes/no/magic words accept English alongside the
-// translation.
+// i18n-node.mjs / web); yes/no/magic words always accept English alongside
+// the translation (the caller may pre-union several locales' words into the
+// display locale, keeping e.g. Russian answers parseable in English mode).
 export function localeOptions(locale) {
   const base = {
     strings: locale?.uiBase ?? {},
@@ -99,19 +110,11 @@ export function localeOptions(locale) {
     noWords: ['NO', 'N'],
     magics: ['DWARF'],
   };
-  if (!locale || locale.code === 'en') {
-    return {
-      strings: { ...base.strings, ...(locale?.strings || {}) },
-      yesWords: base.yesWords.map(w5),
-      noWords: base.noWords.map(w5),
-      magics: base.magics.map(w5),
-    };
-  }
   return {
-    strings: { ...base.strings, ...(locale.strings || {}) },
-    yesWords: uniq([...(locale.yesWords || []), ...base.yesWords]).map(w5),
-    noWords: uniq([...(locale.noWords || []), ...base.noWords]).map(w5),
-    magics: uniq([...(locale.magics || []), ...base.magics]).map(w5),
+    strings: { ...base.strings, ...(locale?.strings || {}) },
+    yesWords: uniq([...(locale?.yesWords || []), ...base.yesWords]).map(w5),
+    noWords: uniq([...(locale?.noWords || []), ...base.noWords]).map(w5),
+    magics: uniq([...(locale?.magics || []), ...base.magics]).map(w5),
   };
 }
 

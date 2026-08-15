@@ -155,3 +155,42 @@ test('applyLocale does not mutate the base data (English stays the default)', ()
   applyLocale(data, loadLocale('ru'));
   assert.equal(JSON.stringify(data.vocab.length) + data.ltext[1][0], before);
 });
+
+// ---- multilingual parsing: display language vs input language ----
+
+test('applyLocale with an English display locale keeps English text but unions extra vocab', () => {
+  const merged = applyLocale(data, loadLocale('en'), [loadLocale('ru')]);
+
+  // The display text stays English (sections are shared, not replaced)...
+  assert.equal(merged.ltext, data.ltext);
+  assert.equal(merged.stext, data.stext);
+  assert.equal(merged.rtext, data.rtext);
+  // ...while the vocabulary parses both languages.
+  const pairs = new Set(merged.vocab.map((e) => `${e.n}:${e.w}`));
+  assert.ok(pairs.has('3:ВОЙТИ'));
+  assert.ok(pairs.has('1002:ЛАМПА'));
+  for (const e of data.vocab) {
+    assert.ok(pairs.has(`${e.n}:${e.w}`), `English word ${JSON.stringify(e.w)} lost from the vocabulary`);
+  }
+});
+
+test('applyLocale skips an extra locale that carries no vocabulary', () => {
+  // English as an extra adds nothing; the data object is passed through.
+  assert.equal(applyLocale(data, loadLocale('ru'), [loadLocale('en')]).vocab.length,
+    applyLocale(data, loadLocale('ru')).vocab.length);
+});
+
+test('localeOptions accepts the locale yes/no/magic words in English display too', () => {
+  // web/app.mjs pre-unions every locale's words into the display locale, so
+  // answers typed in any bundled language keep working after a switch.
+  const locale = {
+    ...loadLocale('en'),
+    yesWords: ['ДА', 'Д', 'YES', 'Y'],
+    noWords: ['НЕТ', 'Н', 'NO', 'N'],
+    magics: ['ГНОМ', 'DWARF'],
+  };
+  const o = localeOptions(locale);
+  assert.deepEqual(o.yesWords, ['ДА   ', 'Д    ', 'YES  ', 'Y    ']);
+  assert.deepEqual(o.noWords, ['НЕТ  ', 'Н    ', 'NO   ', 'N    ']);
+  assert.deepEqual(o.magics, ['ГНОМ ', 'DWARF']);
+});

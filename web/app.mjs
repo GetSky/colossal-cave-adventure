@@ -8,7 +8,7 @@
 // repository is served locally and when deployed under /<repo>/.
 
 import { applyLocale } from '../src/i18n.mjs';
-import { createSession } from './game.mjs';
+import { createSession, migrateSaveSlots } from './game.mjs';
 import { createTerminal } from './terminal.mjs';
 
 const LANGS = ['en', 'ru'];
@@ -75,12 +75,11 @@ async function main() {
   const loading = document.createTextNode(ui.loading);
   document.getElementById('screen').appendChild(loading);
 
-  let baseData, enJson, localeJson;
+  let baseData, localeJsons;
   try {
-    [baseData, enJson, localeJson] = await Promise.all([
+    [baseData, ...localeJsons] = await Promise.all([
       fetchJson('./src/data.json'),
-      fetchJson('./src/locales/en.json'),
-      lang === 'en' ? null : fetchJson(`./src/locales/${lang}.json`),
+      ...LANGS.map((l) => fetchJson(`./src/locales/${l}.json`)),
     ]);
   } catch (err) {
     loading.remove();
@@ -88,13 +87,25 @@ async function main() {
     return;
   }
   loading.remove();
+  const locales = Object.fromEntries(LANGS.map((l, i) => [l, localeJsons[i]]));
 
   // Same locale convention as the CLI's i18n-node.mjs: the English strings
   // ride along as uiBase and serve as the fallback for missing keys.
-  const locale = localeJson ?? enJson;
+  const locale = locales[lang];
   locale.code = lang;
-  locale.uiBase = enJson.strings ?? {};
-  const data = applyLocale(baseData, locale);
+  locale.uiBase = locales.en.strings ?? {};
+  // The display language only changes the text; the game itself is shared.
+  // Input stays multilingual: yes/no/magic words (and, via applyLocale, the
+  // vocabulary) accept every bundled language, so a game saved in one
+  // language replays and continues in any other.
+  for (const key of ['yesWords', 'noWords', 'magics']) {
+    locale[key] = LANGS.flatMap((l) => locales[l][key] ?? []);
+  }
+  const data = applyLocale(
+    baseData,
+    locale,
+    LANGS.filter((l) => l !== lang).map((l) => locales[l])
+  );
 
   let session = null;
 
@@ -104,9 +115,10 @@ async function main() {
     terminal.setInputEnabled(waiting);
     // Resume is meaningful once the current game has ended and something is
     // actually saved (a SUSPEND snapshot; a finished game clears its slots).
+    // The slots are language-independent, so the game survives a switch.
     const hasSave =
-      localStorage.getItem(`adventure:suspend:${lang}`) !== null ||
-      localStorage.getItem(`adventure:auto:${lang}`) !== null;
+      localStorage.getItem('adventure:suspend') !== null ||
+      localStorage.getItem('adventure:auto') !== null;
     resumeBtn.disabled = !(stopped && hasSave);
     if (stopped) {
       terminal.note(session.isSuspended() ? ui.suspended : ui.gameOver);
@@ -118,8 +130,8 @@ async function main() {
       data,
       locale,
       storage: localStorage,
-      saveKey: `adventure:auto:${lang}`,
-      suspendKey: `adventure:suspend:${lang}`,
+      saveKey: 'adventure:auto',
+      suspendKey: 'adventure:suspend',
       onWrite: (chunk) => terminal.write(chunk),
       onStateChange: syncUi,
     });
@@ -144,7 +156,7 @@ async function main() {
   newBtn.addEventListener('click', () => {
     if (
       (session && !session.isStopped()) ||
-      localStorage.getItem(`adventure:suspend:${lang}`) !== null
+      localStorage.getItem('adventure:suspend') !== null
     ) {
       if (!confirm(ui.confirmNew)) return;
     }
@@ -164,6 +176,10 @@ async function main() {
     localStorage.setItem('adventure:lang', langSelect.value);
     location.search = `?lang=${langSelect.value}`;
   });
+
+  // Upgrade pre-language-independent slots (adventure:auto:ru, ...) once,
+  // before anything reads or writes the shared slots.
+  migrateSaveSlots(localStorage, [lang, ...LANGS.filter((l) => l !== lang)]);
 
   startSession();
 }
