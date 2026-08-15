@@ -115,11 +115,15 @@ async function main() {
     terminal.setInputEnabled(waiting);
     // Resume is meaningful once the current game has ended and something is
     // actually saved (a SUSPEND snapshot; a finished game clears its slots).
-    // The slots are language-independent, so the game survives a switch.
+    // The slots are language-independent, so the game survives a language
+    // switch.  While irrelevant, the button is hidden to keep the toolbar
+    // clean (hidden alone would also stop clicks; disabled stays for a11y).
     const hasSave =
       localStorage.getItem('adventure:suspend') !== null ||
       localStorage.getItem('adventure:auto') !== null;
-    resumeBtn.disabled = !(stopped && hasSave);
+    const resumable = stopped && hasSave;
+    resumeBtn.disabled = !resumable;
+    resumeBtn.hidden = !resumable;
     if (stopped) {
       terminal.note(session.isSuspended() ? ui.suspended : ui.gameOver);
     }
