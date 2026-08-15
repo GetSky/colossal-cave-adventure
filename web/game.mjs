@@ -15,6 +15,33 @@
 import { Engine } from '../src/engine.mjs';
 import { ran, ranState, ranSetState } from '../src/rng.mjs';
 
+// One-time upgrade from the per-language slots ('adventure:auto:ru', ...)
+// used before saves became language-independent: move the best surviving
+// progress to the shared keys and drop the old ones.  `langs` is ordered by
+// preference (the visitor's language first); a SUSPEND snapshot beats an
+// autosave transcript.
+export function migrateSaveSlots(storage, langs = ['en', 'ru']) {
+  const AUTO = 'adventure:auto';
+  const SUSPEND = 'adventure:suspend';
+  if (storage.getItem(AUTO) !== null || storage.getItem(SUSPEND) !== null) return;
+  const pick = (base) => {
+    for (const lang of langs) {
+      const raw = storage.getItem(`${base}:${lang}`);
+      if (raw !== null) return raw;
+    }
+    return null;
+  };
+  const snap = pick(SUSPEND);
+  const auto = pick(AUTO);
+  if (snap !== null) storage.setItem(SUSPEND, snap);
+  else if (auto !== null) storage.setItem(AUTO, auto);
+  else return;
+  for (const lang of langs) {
+    storage.removeItem(`${AUTO}:${lang}`);
+    storage.removeItem(`${SUSPEND}:${lang}`);
+  }
+}
+
 // Promise-backed io: getline() drains the queue first (type-ahead, replay),
 // then suspends until feed() delivers the next line.
 export function createQueueIo({ onWrite }) {
@@ -66,8 +93,9 @@ export function createQueueIo({ onWrite }) {
 
 // One game session (a live engine plus its save slots).  `storage` is any
 // { getItem, setItem, removeItem } object (localStorage in the browser, a Map
-// wrapper in tests).  Slots are per-language: pass e.g. saveKey
-// 'adventure:auto:ru'.
+// wrapper in tests).  The slots are shared across languages: the save formats
+// are language-independent (a numeric snapshot; a replayable transcript), so
+// switching the display language keeps the same game.
 export function createSession({ data, locale, storage, onWrite, saveKey = 'adventure:auto', suspendKey = 'adventure:suspend', onStateChange }) {
   const qio = createQueueIo({ onWrite });
 

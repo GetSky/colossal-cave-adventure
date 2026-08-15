@@ -10,9 +10,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createIo, scriptedInput } from '../src/io.mjs';
 import { Engine } from '../src/engine.mjs';
+import { applyLocale } from '../src/i18n.mjs';
 import { loadLocale } from '../src/i18n-node.mjs';
 import { ranSetState } from '../src/rng.mjs';
-import { createSession } from '../web/game.mjs';
+import { createSession, migrateSaveSlots } from '../web/game.mjs';
 
 const data = JSON.parse(fs.readFileSync(new URL('../src/data.json', import.meta.url), 'utf8'));
 const locale = loadLocale('en');
@@ -150,4 +151,115 @@ test('SUSPEND stores a snapshot; resumeSaved() continues at the current location
   // A finished game clears its slots.
   assert.equal(storage.getItem('adventure:auto'), null);
   assert.equal(storage.getItem('adventure:suspend'), null);
+});
+
+// ---- language switching keeps the game ----
+//
+// Mirrors web/app.mjs: the display locale carries the yes/no/magic words of
+// every bundled language, and applyLocale unions the parse vocabulary, so a
+// transcript recorded in one language replays and continues under another.
+
+const enLocale = loadLocale('en');
+const ruLocale = loadLocale('ru');
+function webLocale(display, all) {
+  const locale = { ...display };
+  for (const key of ['yesWords', 'noWords', 'magics']) {
+    locale[key] = all.flatMap((l) => l[key] ?? []);
+  }
+  return locale;
+}
+const ruWeb = webLocale(ruLocale, [enLocale, ruLocale]);
+const enWeb = webLocale(enLocale, [enLocale, ruLocale]);
+const ruData = applyLocale(data, ruWeb, [enLocale]);
+const enData = applyLocale(data, enWeb, [ruLocale]);
+
+test('switching RU -> EN keeps the game: the Russian transcript replays in English', async () => {
+  const ruCommands = ['НЕТ', 'ВОЙТИ', 'ВОЗЬМИ ЛАМПУ'];
+  const tail = ['ИНВЕНТАРЬ', 'ВЫЙТИ', 'ВЫХОД', 'ДА'];
+
+  // Baseline: the whole script played in Russian.
+  const baseOut = [];
+  ranSetState(6);
+  const baseline = createSession({ data: ruData, locale: ruWeb, storage: fakeStorage(), onWrite: (s) => baseOut.push(s) });
+  baseline.newGame();
+  await drive(baseline, [...ruCommands, ...tail]);
+  assert.equal(baseline.isStopped(), true);
+
+  // First visit in Russian: play half the game, then "switch the language".
+  const storage = fakeStorage();
+  const out1 = [];
+  ranSetState(6);
+  const first = createSession({ data: ruData, locale: ruWeb, storage, onWrite: (s) => out1.push(s) });
+  first.newGame();
+  await drive(first, ruCommands);
+  assert.equal(first.isWaiting(), true);
+  assert.match(out1.join(''), /ВЫ ВНУТРИ ЗДАНИЯ/);
+
+  // "Reload" in English: the same shared slots resume the same game -- the
+  // replay reprints the whole history in English and English commands
+  // continue it exactly where the Russian run would be.
+  const out2 = [];
+  const second = createSession({ data: enData, locale: enWeb, storage, onWrite: (s) => out2.push(s) });
+  assert.equal(second.resumeSaved(), true);
+  await drive(second, ['INVENTORY', 'OUT', 'QUIT', 'YES']);
+
+  assert.equal(second.isStopped(), true);
+  assert.equal(second.engine().score, baseline.engine().score);
+  assert.equal(second.engine().turns, baseline.engine().turns);
+  const text2 = out2.join('');
+  assert.match(text2, /WELCOME TO ADVENTURE/); // the replayed history is English
+  assert.match(text2, /YOU ARE INSIDE A BUILDING/);
+  assert.doesNotMatch(text2, /ДОБРО ПОЖАЛОВАТЬ/); // ...not Russian
+});
+
+test('a SUSPEND snapshot taken in Russian resumes in English (snapshots are language-independent)', async () => {
+  const storage = fakeStorage();
+  const out = [];
+  ranSetState(6);
+  const ruSession = createSession({ data: ruData, locale: ruWeb, storage, onWrite: (s) => out.push(s) });
+  ruSession.newGame();
+  await drive(ruSession, ['НЕТ', 'ВОЙТИ', 'ВОЗЬМИ ЛАМПУ', 'ПАУЗА', 'ДА']);
+  assert.equal(ruSession.isSuspended(), true);
+
+  const out2 = [];
+  const enSession = createSession({ data: enData, locale: enWeb, storage, onWrite: (s) => out2.push(s) });
+  assert.equal(enSession.resumeSaved(), true);
+  await drive(enSession, ['QUIT', 'Y']);
+
+  assert.equal(enSession.isStopped(), true);
+  assert.match(out2.join(''), /YOU'RE INSIDE BUILDING\./);
+  assert.match(out2.join(''), /DO YOU REALLY WANT TO QUIT NOW\?/);
+});
+
+// ---- one-time migration of the old per-language slots ----
+
+test('migrateSaveSlots moves per-language progress to the shared keys', () => {
+  const storage = fakeStorage();
+  storage.setItem('adventure:auto:ru', '{"rngAtStart":6,"commands":["НЕТ"]}');
+  migrateSaveSlots(storage, ['en', 'ru']);
+  assert.equal(storage.getItem('adventure:auto'), '{"rngAtStart":6,"commands":["НЕТ"]}');
+  assert.equal(storage.getItem('adventure:auto:ru'), null);
+  assert.equal(storage.getItem('adventure:auto:en'), null);
+});
+
+test('migrateSaveSlots prefers a suspend snapshot over an autosave transcript', () => {
+  const storage = fakeStorage();
+  storage.setItem('adventure:auto:ru', '{"commands":["НЕТ"]}');
+  storage.setItem('adventure:suspend:en', '{"state":{"loc":6}}');
+  migrateSaveSlots(storage, ['ru', 'en']);
+  assert.equal(storage.getItem('adventure:suspend'), '{"state":{"loc":6}}');
+  assert.equal(storage.getItem('adventure:auto'), null); // the lesser save is dropped
+  assert.equal(storage.getItem('adventure:auto:ru'), null);
+  assert.equal(storage.getItem('adventure:suspend:en'), null);
+});
+
+test('migrateSaveSlots leaves existing shared slots and empty storage alone', () => {
+  const storage = fakeStorage();
+  migrateSaveSlots(storage, ['en', 'ru']); // nothing saved: no-op
+  assert.equal(storage.getItem('adventure:auto'), null);
+
+  storage.setItem('adventure:auto', '{"commands":["IN"]}');
+  storage.setItem('adventure:auto:ru', '{"commands":["НЕТ"]}');
+  migrateSaveSlots(storage, ['en', 'ru']); // shared slot wins: no-op
+  assert.equal(storage.getItem('adventure:auto'), '{"commands":["IN"]}');
 });
