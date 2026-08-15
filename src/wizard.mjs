@@ -30,15 +30,15 @@ export function installWizard(Engine) {
     while (true) {
       if (x) this.mspeak(x);
       const r = this.getin();
-      if (r.wd1 === norm('YES') || r.wd1 === norm('Y')) {
+      if (this.yesWords.includes(r.wd1)) {
         if (y) this.mspeak(y);
         return true;
       }
-      if (r.wd1 === norm('NO') || r.wd1 === norm('N')) {
+      if (this.noWords.includes(r.wd1)) {
         if (z) this.mspeak(z);
         return false;
       }
-      this.io.println('Please answer the question.');
+      this.io.println(this.t('pleaseAnswer'));
     }
   };
 
@@ -76,25 +76,29 @@ export function installWizard(Engine) {
   // HOURS: announce current cave hours. (FORTRAN HOURS, lines 2639-2669)
   Engine.prototype.hours = function () {
     this.io.println('');
-    this.hoursX(this.wkday, 'Mon -', ' Fri:');
-    this.hoursX(this.wkend, 'Sat -', ' Sun:');
-    this.hoursX(this.holid, 'Holid', 'ays: ');
+    this.hoursX(this.wkday, this.t('weekdays1'), this.t('weekdays2'));
+    this.hoursX(this.wkend, this.t('weekend1'), this.t('weekend2'));
+    this.hoursX(this.holid, this.t('holidayLabel1'), this.t('holidayLabel2'));
     const [D] = this.datime();
     if (this.hend < D || this.hend < this.hbegin) return;
     if (this.hbegin > D) {
       const days = this.hbegin - D;
       this.io.println(
-        ` The next holiday will be in${String(days).padStart(3)} ${days === 1 ? 'Day, ' : 'Days,'} namely ${this.hname}`,
+        this.t('holidayNext', {
+          d: days,
+          unit: days === 1 ? this.t('holidayDay') : this.t('holidayDays'),
+          name: this.hname,
+        }),
       );
     } else {
-      this.io.println(` Today is a holiday, namely ${this.hname}`);
+      this.io.println(this.t('holidayToday', { name: this.hname }));
     }
   };
 
   // HOURSX: print the open/closed hours for one day-type. (lines 2673-2704)
   Engine.prototype.hoursX = function (h, day1, day2) {
     if (h === 0) {
-      this.io.println(`          ${day1}${day2}  Open all day`);
+      this.io.println(this.t('hoursOpen', { day1, day2 }));
       return;
     }
     let first = true;
@@ -103,13 +107,13 @@ export function installWizard(Engine) {
     while (true) {
       while ((h & shift(1, from)) !== 0) from++; // skip prime (closed) hours
       if (from >= 24) {
-        if (first) this.io.println(`          ${day1}${day2}  Closed all day`);
+        if (first) this.io.println(this.t('hoursClosed', { day1, day2 }));
         return;
       }
       till = from;
       while (till !== 24 && (h & shift(1, till)) === 0) till++;
-      if (first) this.io.println(`          ${day1}${day2}${String(from).padStart(4)}:00 to${String(till).padStart(3)}:00`);
-      else this.io.println(`                    ${String(from).padStart(4)}:00 to${String(till).padStart(3)}:00`);
+      if (first) this.io.println(this.t('hoursRange', { day1, day2, from, till }));
+      else this.io.println(this.t('hoursRangeNext', { from, till }));
       first = false;
       from = till;
     }
@@ -118,20 +122,20 @@ export function installWizard(Engine) {
   // NEWHRS / NEWHRX: let a wizard set prime-time hours. (lines 2708-2751)
   Engine.prototype.newHrs = function () {
     this.mspeak(21);
-    this.wkday = this.newHrX('Weekd', 'ays:');
-    this.wkend = this.newHrX('Weeke', 'nds:');
-    this.holid = this.newHrX('Holid', 'ays:');
+    this.wkday = this.newHrX(this.t('week1'), this.t('week2'));
+    this.wkend = this.newHrX(this.t('wknd1'), this.t('wknd2'));
+    this.holid = this.newHrX(this.t('hol1'), this.t('hol2'));
     this.mspeak(22);
     this.hours();
   };
   Engine.prototype.newHrX = function (day1, day2) {
     let mask = 0;
-    this.io.println(`Prime time on ${day1}${day2}`);
+    this.io.println(this.t('primeTimeOn', { day1, day2 }));
     while (true) {
-      this.io.println(' from:');
+      this.io.println(this.t('fromPrompt'));
       const from = Number.parseInt(this.io.getline() || '', 10);
       if (Number.isNaN(from) || from < 0 || from >= 24) return mask;
-      this.io.println(' till:');
+      this.io.println(this.t('tillPrompt'));
       const tillRaw = Number.parseInt(this.io.getline() || '', 10);
       const till = tillRaw - 1;
       if (Number.isNaN(till) || till < from || till >= 24) return mask;
@@ -144,7 +148,7 @@ export function installWizard(Engine) {
     if (!this.yesm(16, 0, 7)) return false;
     this.mspeak(17);
     const r = this.getin();
-    if (!this.eq(r.wd1, this.magic)) return this.impostor();
+    if (!this.eq(r.wd1, this.magic) && !this.magics.includes(r.wd1)) return this.impostor();
     // generate the date-based challenge (5 letters), portable re-derivation of
     // the FORTRAN packed-word challenge (lines 2600-2623).
     let [D, T] = this.datime();
@@ -201,7 +205,7 @@ export function installWizard(Engine) {
       this.mspeak(29);
       this.hname = (this.io.getline() || '').toUpperCase();
     }
-    this.io.println(`Length of short game (null to leave at${String(this.short).padStart(3)}):`);
+    this.io.println(this.t('shortGameLen', { n: this.short }));
     const sh = Number.parseInt(this.io.getline() || '0', 10);
     if (sh > 0) this.short = sh;
     this.mspeak(12);
@@ -210,7 +214,7 @@ export function installWizard(Engine) {
     this.mspeak(13);
     const mn = Number.parseInt(this.io.getline() || '0', 10);
     if (mn > 0) this.magnm = mn;
-    this.io.println(`Latency for restart (null to leave at${String(this.latncy).padStart(3)}):`);
+    this.io.println(this.t('latencyPrompt', { n: this.latncy }));
     const lt = Number.parseInt(this.io.getline() || '0', 10);
     if (lt > 0 && lt < 45) this.mspeak(30);
     if (lt > 0) this.latncy = Math.max(45, lt);
