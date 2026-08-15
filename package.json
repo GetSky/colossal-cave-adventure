@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/index.mjs",
   "bin": {
-    "gamayun": "src/index.mjs"
+    "advent": "src/index.mjs"
   },
   "scripts": {
     "build": "node tools/build-dat.mjs",

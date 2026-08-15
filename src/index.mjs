@@ -3,7 +3,7 @@
 // Loads the precompiled database (building it first if absent), wires the
 // synchronous terminal I/O, and runs the engine.
 //
-// Usage: gamayun [--lang <xx>] [--resume]
+// Usage: advent [--lang <xx>] [--resume]
 //   --lang ru | --lang=ru | -l ru   choose the UI language (default: en)
 
 import fs from 'node:fs';
@@ -12,11 +12,12 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { createIo } from './io.mjs';
 import { Engine } from './engine.mjs';
-import { resolveLang, loadLocale, applyLocale } from './i18n.mjs';
+import { resolveLang, applyLocale } from './i18n.mjs';
+import { loadLocale } from './i18n-node.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_PATH = path.join(__dirname, 'data.json');
-const SAVE_PATH = path.join(os.homedir(), '.gamayun-save.json');
+const SAVE_PATH = path.join(os.homedir(), '.adventure-save.json');
 
 function ensureData() {
   if (fs.existsSync(DATA_PATH)) return;
@@ -43,17 +44,21 @@ try {
 const data = applyLocale(baseData, locale);
 
 const io = createIo();
-const engine = new Engine(data, io, locale);
+const engine = new Engine(data, io, locale, {
+  // SUSPEND persistence lives outside the engine (it is Node-specific here,
+  // localStorage in the web version).
+  onSave: (json) => fs.writeFileSync(SAVE_PATH, json),
+});
 
 const wantResume = process.argv.includes('--resume') || process.argv.includes('resume');
 if (wantResume && fs.existsSync(SAVE_PATH)) {
   try {
     const state = JSON.parse(fs.readFileSync(SAVE_PATH, 'utf8'));
     engine.resume(state);
-    engine.run('L2000'); // continue from the current location description
+    await engine.run('L2000'); // continue from the current location description
   } catch (e) {
     io.println(engine.t('resumeFailed', { msg: e.message }));
   }
 } else {
-  engine.run();
+  await engine.run();
 }

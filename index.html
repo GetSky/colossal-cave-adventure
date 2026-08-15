@@ -1,0 +1,38 @@
+<!doctype html>
+<!-- Served as-is both locally (repo root over any static server) and on
+     GitHub Pages (the deploy workflow copies this file, web/ and src/
+     verbatim).  All URLs are relative, so it works under /<repo>/ too. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="The original Colossal Cave Adventure (Crowther &amp; Woods, 1977) in your browser.">
+  <title>Colossal Cave Adventure</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23071007'/%3E%3Ctext x='8' y='12.5' font-size='11' text-anchor='middle' fill='%2369f070' font-family='monospace'%3E%26gt;_%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./web/style.css">
+</head>
+<body>
+  <header class="bar">
+    <span class="brand">ADVENTURE<span class="sub">Colossal Cave · Crowther &amp; Woods, 1977</span></span>
+    <span class="tools">
+      <button id="new" type="button">New game</button>
+      <button id="resume" type="button" disabled>Resume</button>
+      <select id="lang" aria-label="Language / Язык">
+        <option value="en">EN</option>
+        <option value="ru">RU</option>
+      </select>
+    </span>
+  </header>
+
+  <main id="screen" aria-live="polite"></main>
+
+  <form id="form" autocomplete="off">
+    <span class="prompt" aria-hidden="true">&gt;</span>
+    <input id="input" type="text" autocomplete="off" autocapitalize="characters"
+           spellcheck="false" autocorrect="off" enterkeyhint="send" disabled>
+  </form>
+
+  <script type="module" src="./web/app.mjs"></script>
+</body>
+</html>

@@ -8,13 +8,12 @@
 //
 // The language is chosen at launch:  --lang=ru | --lang ru | -l ru
 // (default: en, keeping the historic English behaviour byte-for-byte).
-
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const LOCALES_DIR = path.join(__dirname, 'locales');
+//
+// This module is pure data plumbing (no Node- or browser-specific APIs), so
+// the engine can import it in any environment.  Reading the locale files
+// from disk is Node-only and lives in i18n-node.mjs; a web page fetches the
+// JSON itself.  Both attach the English UI strings as `locale.uiBase`, which
+// serves as the fallback for incompletely translated locales.
 
 // The data sections a locale may override (everything textual in data.json).
 const TEXT_SECTIONS = ['ltext', 'stext', 'rtext', 'mtext', 'otext', 'classes'];
@@ -36,34 +35,6 @@ export function resolveLang(argv) {
 
 function normLang(s) {
   return String(s).trim().toLowerCase().split(/[-_.]/)[0] || 'en';
-}
-
-// Language codes available in src/locales/ (excluding the base 'en' strings
-// file is fine -- it lives there too, so it is listed).
-export function availableLangs() {
-  try {
-    return fs
-      .readdirSync(LOCALES_DIR)
-      .filter((f) => f.endsWith('.json'))
-      .map((f) => f.slice(0, -5))
-      .sort();
-  } catch {
-    return ['en'];
-  }
-}
-
-// Load a locale.  For 'en' the text sections stay in data.json (the locale
-// file only carries the UI strings); any other language must exist as a file.
-// Returns a locale object; throws with a friendly message for unknown langs.
-export function loadLocale(lang) {
-  const code = normLang(lang || 'en');
-  const file = path.join(LOCALES_DIR, code + '.json');
-  if (!fs.existsSync(file)) {
-    throw new Error(`unknown language "${lang}" (available: ${availableLangs().join(', ')})`);
-  }
-  const locale = JSON.parse(fs.readFileSync(file, 'utf8'));
-  locale.code = code;
-  return locale;
 }
 
 // Overlay a locale onto the compiled database.  Returns a *new* data object;
@@ -117,32 +88,24 @@ function slavicPluralIndex(n) {
   return 2;
 }
 
-// English UI strings (locales/en.json `strings` section), read once and
-// cached.  They double as the fallback for incomplete locales and as the
-// strings used when no locale was requested at all.
-let enStringsCache = null;
-export function enStrings() {
-  if (enStringsCache === null) {
-    try {
-      enStringsCache = JSON.parse(fs.readFileSync(path.join(LOCALES_DIR, 'en.json'), 'utf8')).strings || {};
-    } catch {
-      enStringsCache = {};
-    }
-  }
-  return enStringsCache;
-}
-
 // Options bundle the engine needs from a locale.  Strings always fall back
-// to English; yes/no/magic words accept English alongside the translation.
+// to English (`locale.uiBase`, attached by whoever loaded the locales -- see
+// i18n-node.mjs / web); yes/no/magic words accept English alongside the
+// translation.
 export function localeOptions(locale) {
   const base = {
-    strings: enStrings(),
+    strings: locale?.uiBase ?? {},
     yesWords: ['YES', 'Y'],
     noWords: ['NO', 'N'],
     magics: ['DWARF'],
   };
   if (!locale || locale.code === 'en') {
-    return { ...base, yesWords: base.yesWords.map(w5), noWords: base.noWords.map(w5), magics: base.magics.map(w5) };
+    return {
+      strings: { ...base.strings, ...(locale?.strings || {}) },
+      yesWords: base.yesWords.map(w5),
+      noWords: base.noWords.map(w5),
+      magics: base.magics.map(w5),
+    };
   }
   return {
     strings: { ...base.strings, ...(locale.strings || {}) },

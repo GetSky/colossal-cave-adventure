@@ -26,10 +26,10 @@ export class EofSignal extends Error {
 // Install all wizard/cave-hours methods onto the given Engine class.
 export function installWizard(Engine) {
   // YESM: yes/no prompt that uses "magic" (section 12) messages. (FORTRAN YESM)
-  Engine.prototype.yesm = function (x, y, z) {
+  Engine.prototype.yesm = async function (x, y, z) {
     while (true) {
       if (x) this.mspeak(x);
-      const r = this.getin();
+      const r = await this.getin();
       if (this.yesWords.includes(r.wd1)) {
         if (y) this.mspeak(y);
         return true;
@@ -44,7 +44,7 @@ export function installWizard(Engine) {
 
   // START: prime-time / latency check.  Returns true for a demo game.
   // (FORTRAN START, lines 2455-2517)
-  Engine.prototype.start = function () {
+  Engine.prototype.start = async function () {
     let [D, T] = this.datime();
     let primtm = this.wkday;
     if (D % 7 <= 1) primtm = this.wkend; // Saturday/Sunday (day 0 = Sat)
@@ -59,11 +59,11 @@ export function installWizard(Engine) {
     this.mspeak(3);
     this.hours();
     this.mspeak(4);
-    if (this.wizard()) {
+    if (await this.wizard()) {
       this.saved = -1;
       return false;
     }
-    const demo = this.yesm(5, 7, 7);
+    const demo = await this.yesm(5, 7, 7);
     if (demo) {
       this.saved = -1;
       return true;
@@ -120,23 +120,23 @@ export function installWizard(Engine) {
   };
 
   // NEWHRS / NEWHRX: let a wizard set prime-time hours. (lines 2708-2751)
-  Engine.prototype.newHrs = function () {
+  Engine.prototype.newHrs = async function () {
     this.mspeak(21);
-    this.wkday = this.newHrX(this.t('week1'), this.t('week2'));
-    this.wkend = this.newHrX(this.t('wknd1'), this.t('wknd2'));
-    this.holid = this.newHrX(this.t('hol1'), this.t('hol2'));
+    this.wkday = await this.newHrX(this.t('week1'), this.t('week2'));
+    this.wkend = await this.newHrX(this.t('wknd1'), this.t('wknd2'));
+    this.holid = await this.newHrX(this.t('hol1'), this.t('hol2'));
     this.mspeak(22);
     this.hours();
   };
-  Engine.prototype.newHrX = function (day1, day2) {
+  Engine.prototype.newHrX = async function (day1, day2) {
     let mask = 0;
     this.io.println(this.t('primeTimeOn', { day1, day2 }));
     while (true) {
       this.io.println(this.t('fromPrompt'));
-      const from = Number.parseInt(this.io.getline() || '', 10);
+      const from = Number.parseInt((await this.io.getline()) || '', 10);
       if (Number.isNaN(from) || from < 0 || from >= 24) return mask;
       this.io.println(this.t('tillPrompt'));
-      const tillRaw = Number.parseInt(this.io.getline() || '', 10);
+      const tillRaw = Number.parseInt((await this.io.getline()) || '', 10);
       const till = tillRaw - 1;
       if (Number.isNaN(till) || till < from || till >= 24) return mask;
       for (let i = from; i <= till; i++) mask |= shift(1, i);
@@ -144,10 +144,10 @@ export function installWizard(Engine) {
   };
 
   // WIZARD: ask for credentials. (FORTRAN WIZARD, lines 2578-2635)
-  Engine.prototype.wizard = function () {
-    if (!this.yesm(16, 0, 7)) return false;
+  Engine.prototype.wizard = async function () {
+    if (!(await this.yesm(16, 0, 7))) return false;
     this.mspeak(17);
-    const r = this.getin();
+    const r = await this.getin();
     if (!this.eq(r.wd1, this.magic) && !this.magics.includes(r.wd1)) return this.impostor();
     // generate the date-based challenge (5 letters), portable re-derivation of
     // the FORTRAN packed-word challenge (lines 2600-2623).
@@ -162,10 +162,10 @@ export function installWizard(Engine) {
     }
     let chal = '';
     for (let Y = 1; Y <= 5; Y++) chal += String.fromCharCode(64 + val[Y]);
-    if (this.yesm(18, 0, 0)) return this.impostor();
+    if (await this.yesm(18, 0, 0)) return this.impostor();
     this.io.println('');
     this.io.println(' ' + chal);
-    const rep = this.getin();
+    const rep = await this.getin();
     // compute the expected reply
     let [D2, T2] = this.datime();
     T2 = Math.floor(T2 / 60) * 40 + Math.floor(T2 / 10) * 10;
@@ -189,36 +189,36 @@ export function installWizard(Engine) {
   };
 
   // MAINT: wizard maintenance menu. (FORTRAN MAINT, lines 2521-2574)
-  Engine.prototype.maint = function () {
-    if (!this.wizard()) return;
+  Engine.prototype.maint = async function () {
+    if (!(await this.wizard())) return;
     this.speech.blklin = false;
-    if (this.yesm(10, 0, 0)) this.hours();
-    if (this.yesm(11, 0, 0)) this.newHrs();
-    if (this.yesm(26, 0, 0)) {
+    if (await this.yesm(10, 0, 0)) this.hours();
+    if (await this.yesm(11, 0, 0)) await this.newHrs();
+    if (await this.yesm(26, 0, 0)) {
       this.mspeak(27);
-      this.hbegin = Number.parseInt(this.io.getline() || '0', 10) || 0;
+      this.hbegin = Number.parseInt((await this.io.getline()) || '0', 10) || 0;
       this.mspeak(28);
-      const span = Number.parseInt(this.io.getline() || '0', 10) || 0;
+      const span = Number.parseInt((await this.io.getline()) || '0', 10) || 0;
       const [D] = this.datime();
       this.hbegin += D;
       this.hend = this.hbegin + span - 1;
       this.mspeak(29);
-      this.hname = (this.io.getline() || '').toUpperCase();
+      this.hname = ((await this.io.getline()) || '').toUpperCase();
     }
     this.io.println(this.t('shortGameLen', { n: this.short }));
-    const sh = Number.parseInt(this.io.getline() || '0', 10);
+    const sh = Number.parseInt((await this.io.getline()) || '0', 10);
     if (sh > 0) this.short = sh;
     this.mspeak(12);
-    const mg = this.getin();
+    const mg = await this.getin();
     if (mg.wd1raw && mg.wd1raw.trim() !== '') this.magic = mg.wd1raw.toUpperCase();
     this.mspeak(13);
-    const mn = Number.parseInt(this.io.getline() || '0', 10);
+    const mn = Number.parseInt((await this.io.getline()) || '0', 10);
     if (mn > 0) this.magnm = mn;
     this.io.println(this.t('latencyPrompt', { n: this.latncy }));
-    const lt = Number.parseInt(this.io.getline() || '0', 10);
+    const lt = Number.parseInt((await this.io.getline()) || '0', 10);
     if (lt > 0 && lt < 45) this.mspeak(30);
     if (lt > 0) this.latncy = Math.max(45, lt);
-    if (this.yesm(14, 0, 0)) this.motd(true);
+    if (await this.yesm(14, 0, 0)) await this.motd(true);
     this.saved = 0;
     this.abb[1] = 0;
     this.mspeak(15);
@@ -228,13 +228,13 @@ export function installWizard(Engine) {
   };
 
   // MOTD: message of the day. (FORTRAN MOTD, lines 2755-2792)
-  Engine.prototype.motd = function (alter) {
+  Engine.prototype.motd = async function (alter) {
     if (this._motd == null) this._motd = null; // null message by default
     if (alter) {
       this._motd = [];
       this.mspeak(23);
       while (true) {
-        const line = this.io.getline();
+        const line = await this.io.getline();
         if (line === null) break;
         if (line.trim() === '') break;
         this._motd.push(line);
