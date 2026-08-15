@@ -12,34 +12,37 @@ import fs from 'node:fs';
 // Returns the next line (without the trailing newline) or null at EOF.
 function createStdinLineReader(fd = 0) {
   let pending = Buffer.alloc(0);
-  return function getline() {
-    while (true) {
-      const nl = pending.indexOf(0x0a);
-      if (nl >= 0) {
-        const line = pending.subarray(0, nl);
-        pending = pending.subarray(nl + 1);
-        let s = line.toString('latin1');
-        if (s.endsWith('\r')) s = s.slice(0, -1);
-        return s;
-      }
-      const chunk = Buffer.alloc(256);
-      let n;
-      try {
-        n = fs.readSync(fd, chunk, 0, chunk.length, null);
-      } catch (e) {
-        return null;
-      }
-      if (n <= 0) {
-        if (pending.length > 0) {
-          const s = pending.toString('latin1');
-          pending = Buffer.alloc(0);
+    return function getline() {
+      while (true) {
+        // Splitting the byte buffer on 0x0A is UTF-8 safe: continuation bytes
+        // are always >= 0x80, so a newline byte can never occur inside a
+        // multi-byte character.  Decoding happens per complete line.
+        const nl = pending.indexOf(0x0a);
+        if (nl >= 0) {
+          const line = pending.subarray(0, nl);
+          pending = pending.subarray(nl + 1);
+          let s = line.toString('utf8');
+          if (s.endsWith('\r')) s = s.slice(0, -1);
           return s;
         }
-        return null;
+        const chunk = Buffer.alloc(256);
+        let n;
+        try {
+          n = fs.readSync(fd, chunk, 0, chunk.length, null);
+        } catch (e) {
+          return null;
+        }
+        if (n <= 0) {
+          if (pending.length > 0) {
+            const s = pending.toString('utf8');
+            pending = Buffer.alloc(0);
+            return s;
+          }
+          return null;
+        }
+        pending = Buffer.concat([pending, chunk.subarray(0, n)]);
       }
-      pending = Buffer.concat([pending, chunk.subarray(0, n)]);
-    }
-  };
+    };
 }
 
 // Create an io object.

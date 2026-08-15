@@ -14,16 +14,27 @@ import { ran, datime as datimeFn } from './rng.mjs';
 import { createSpeaker } from './text.mjs';
 import { makeVocabLookup, norm } from './vocab.mjs';
 import { installWizard, EofSignal } from './wizard.mjs';
+import { localeOptions, fmt } from './i18n.mjs';
 
 const SAVE_PATH = path.join(os.homedir(), '.gamayun-save.json');
 
 export class Engine {
-  constructor(data, io) {
+  constructor(data, io, locale) {
     this.data = data;
     this.io = io;
+    const opts = localeOptions(locale);
+    this.strings = opts.strings;
+    this.yesWords = opts.yesWords;
+    this.noWords = opts.noWords;
+    this.magics = opts.magics;
     this.speech = createSpeaker(data, io);
     this.vocab = makeVocabLookup(data.vocab);
     this.setup();
+  }
+
+  // Localised UI string with {param}/{param:width} substitution (i18n.mjs).
+  t(key, params) {
+    return fmt(this.strings[key] ?? key, params);
   }
 
   bug(num) {
@@ -314,15 +325,15 @@ export class Engine {
     while (true) {
       if (x) this.rspeak(x);
       const r = this.getin();
-      if (r.wd1 === norm('YES') || r.wd1 === norm('Y')) {
+      if (this.yesWords.includes(r.wd1)) {
         if (y) this.rspeak(y);
         return true;
       }
-      if (r.wd1 === norm('NO') || r.wd1 === norm('N')) {
+      if (this.noWords.includes(r.wd1)) {
         if (z) this.rspeak(z);
         return false;
       }
-      this.io.println('Please answer the question.');
+      this.io.println(this.t('pleaseAnswer'));
     }
   }
 
@@ -480,7 +491,7 @@ export class Engine {
       this.rspeak(4);
     } else {
       this.io.println('');
-      this.io.println(` There are ${dtotal} threatening little dwarves in the room with you.`);
+      this.io.println(this.t('dwarvesMany', { n: dtotal }));
     }
     if (attack === 0) return null;
     if (this.dflag === 2) this.dflag = 3;
@@ -491,13 +502,13 @@ export class Engine {
       kstart = 52;
     } else {
       this.io.println('');
-      this.io.println(` ${attack} of them throw knives at you!`);
+      this.io.println(this.t('knivesThrow', { n: attack }));
       kstart = 6;
     }
     // lines 782-793
     if (stick > 1) {
       this.io.println('');
-      this.io.println(` ${stick} of them get you!`);
+      this.io.println(this.t('knivesGet', { n: stick }));
       this.oldlc2 = this.loc;
       return 'L99';
     }
@@ -675,7 +686,7 @@ export class Engine {
     this.hintlc[hint] = 0;
     if (!this.yes(h.qmsg, 0, 54)) return null;
     this.io.println('');
-    this.io.println(` I am prepared to give you a hint, but it will cost you${String(h.cost).padStart(3)} points.`);
+    this.io.println(this.t('hintCost', { n: h.cost }));
     this.hinted[hint] = this.yes(175, h.hmsg, 54);
     if (this.hinted[hint] && this.limit > 30) this.limit += 30 * h.cost;
     return null;
@@ -819,7 +830,7 @@ export class Engine {
     if (this.wd2 !== '') return 'L2800';
     if (this.verb !== 0) return 'L4090';
     this.io.println('');
-    this.io.println(` What do you want to do with the ${this.wd1raw}?`);
+    this.io.println(this.t('whatToDo', { word: this.wd1raw }));
     return 'L2600';
   }
   objectNotHere() {
@@ -853,7 +864,7 @@ export class Engine {
     }
     if ((this.verb === this.FIND || this.verb === this.INVENT) && this.wd2 === '') return 'L5010';
     this.io.println('');
-    this.io.println(` I see no ${this.wd1raw} here.`);
+    this.io.println(this.t('seeNo', { word: this.wd1raw }));
     return 'L2012';
   }
 
@@ -1033,7 +1044,7 @@ export class Engine {
   // =====================================================================
   vRandom() {
     this.io.println('');
-    this.io.println(` ${this.wd1raw}WHAT?`);
+    this.io.println(this.t('whatHow', { word: this.wd1raw }));
     this.obj = 0;
     return 'L2600';
   }
@@ -1174,7 +1185,7 @@ export class Engine {
       return this.dispatch2630();
     }
     this.io.println('');
-    this.io.println(` Okay, "${word}."`);
+    this.io.println(this.t('okaySaid', { word }));
     return 'L2012';
   }
 
@@ -1644,9 +1655,7 @@ export class Engine {
   L8241() {
     this.scorng = false;
     this.io.println('');
-    this.io.println(
-      ` If you were to quit now, you would score${String(this.score).padStart(4)} out of a possible${String(this.mxscor).padStart(4)}.`,
-    );
+    this.io.println(this.t('quitScore', { s: this.score, m: this.mxscor }));
     this.gaveup = this.yes(143, 54, 54);
     return 'L8185';
   }
@@ -1756,9 +1765,7 @@ export class Engine {
       return 'L2011';
     }
     this.io.println('');
-    this.io.println(
-      ` I can suspend your adventure for you so that you can resume later, but\n you will have to wait at least${String(this.latncy).padStart(3)} minutes before continuing.`,
-    );
+    this.io.println(this.t('suspend', { n: this.latncy }));
     if (!this.yes(200, 54, 54)) return 'L2012';
     this.saveGame();
     return 'STOP';
@@ -1783,7 +1790,7 @@ export class Engine {
       fs.writeFileSync(SAVE_PATH, JSON.stringify(state));
       this.mspeak(32);
     } catch (e) {
-      this.io.println(' Save failed: ' + e.message);
+      this.io.println(this.t('saveFailed', { msg: e.message }));
     }
   }
 
@@ -1933,7 +1940,7 @@ export class Engine {
     this.io.println('');
     this.io.println('');
     this.io.println('');
-    this.io.println(`You scored${String(score).padStart(4)} out of a possible${String(mxscor).padStart(4)}, using${String(this.turns).padStart(5)} turns.`);
+    this.io.println(this.t('scored', { s: score, m: mxscor, t: this.turns }));
     let cls = -1;
     for (let i = 0; i < d.classes.length; i++) {
       if (d.classes[i].threshold >= score) {
@@ -1943,7 +1950,7 @@ export class Engine {
     }
     if (cls < 0) {
       this.io.println('');
-      this.io.println(' You just went off my scale!!');
+      this.io.println(this.t('offScale'));
       this.io.println('');
       return 'L25000';
     }
@@ -1951,16 +1958,14 @@ export class Engine {
     if (cls !== d.classes.length - 1) {
       const need = d.classes[cls].threshold + 1 - score;
       this.io.println('');
-      this.io.println(
-        ` To achieve the next higher rating, you need${String(need).padStart(3)} more point${need === 1 ? '' : 's'}.`,
-      );
+      this.io.println(this.t('nextRating', { n: need }));
       this.io.println('');
       return 'L25000';
     }
     this.io.println('');
-    this.io.println(' To achieve the next higher rating would be a neat trick!');
+    this.io.println(this.t('nextRatingTrick'));
     this.io.println('');
-    this.io.println(' Congratulations!!');
+    this.io.println(this.t('congratulations'));
     this.io.println('');
     return 'L25000';
   }

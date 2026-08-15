@@ -32,10 +32,62 @@ Save and restore a game:
 node src/index.mjs --resume   # resume the saved game
 ```
 
+## Languages / Перевод
+
+The game ships in English by default and includes a full Russian translation
+of every message, location description, and object. Choose the language with
+a launch argument:
+
+```bash
+node src/index.mjs --lang=ru   # or: --lang ru | -l ru
+npm start -- --lang=ru
+gamayun --lang ru              # when installed via `npm i -g`
+```
+
+- Without the argument the game is in English (byte-for-byte the historic
+  behavior; tests run in English).
+- `--lang=en`, `--lang=ru`, `--locale`, `--language`, and `-l` are accepted;
+  only the language code's first segment is used, so `ru-RU` works too.
+- An unknown language exits with an error listing the available ones.
+
+### Russian commands
+
+In `--lang=ru` mode the parser additionally understands Russian commands;
+English commands keep working. Only the first five characters of each word
+matter, exactly as in the original:
+
+- Directions: `СЕВЕР`/`С`, `ЮГ`/`Ю`, `ВОСТОК`/`В`, `ЗАПАД`/`З`, `СВ`, `ЮВ`,
+  `ЮЗ`, `СЗ`, `ВВЕРХ`, `ВНИЗ`, `ВОЙТИ`, `ВЫЙТИ`/`НАРУЖУ`, `ЛЕС`, `ЗДАНИЕ`,
+  `ДОРОГА`, `ДОЛИНА`.
+- Verbs: `ВОЗЬМИ` (take), `ПОЛОЖ`/`ВЫБРО` (drop), `ОТКРОЙ` (unlock),
+  `ЗАКРОЙ` (lock), `ЗАЖГИ`/`ВКЛ` (light on), `ПОГАСИ`/`ВЫКЛ` (off),
+  `СМОТРЕТЬ` (look), `ИНВЕНТ` (inventory), `СКАЖИ` (say), `УБЕЙ`/`БЕЙ`
+  (attack), `НАЛЕЙ` (fill), `ВЫЛЕЙ` (pour), `ЕШЬ`, `ПЕЙ`, `КОПАЙ`, `ШВЫРНИ`
+  (throw), `ЧИТАЙ` (read), `СЧЁТ` (score), `ВЫХОД`/`КОНЕЦ` (quit),
+  `ПАУЗА`/`СОХРАНИ` (suspend), `ЧАСЫ` (hours), `ПОМОЩЬ` (help), `ИНФО`
+  (info).
+- Nouns in the nominative or accusative: `ЛАМПА`/`ЛАМПУ`, `КЛЮЧИ`,
+  `РЕШЕТКА`/`РЕШЕТКУ` (also spelled with `Ё`), `ПТИЦА`, `ДВЕРЬ`, `ЗМЕЯ`,
+  `ТОПОР`, `ДРАКОН`, `МЕДВЕДЬ`, `ТРОЛЛЬ`, `ВОДА`, `МАСЛО`, `БУТЫЛКА`,
+  `СУНДУК`, `ЯЙЦА`, `ВАЗА`, `ЗОЛОТО`, `АЛМАЗЫ`, `ЖЕМЧУГ`, `ЦЕПЬ` and the
+  rest of the treasures.
+- Yes/no prompts accept `ДА`/`Д` and `НЕТ`/`Н` (English `Y`/`N` too).
+- The wizard's magic word can be `ГНОМ` as well as `DWARF`.
+- Magic words `XYZZY`, `PLUGH`, `PLOVER`, `FEE FIE FOE FOO` stay English —
+  they are part of the game's lore.
+
+### Adding another language
+
+Create `src/locales/<code>.json` modeled on `src/locales/ru.json`: override
+the text sections (`ltext`, `stext`, `rtext`, `mtext`, `otext`, `classes`),
+list command synonyms in `vocabExtra` (natural spelling; it is normalised to
+the five-character contract automatically), and translate the engine's UI
+`strings`. `test/i18n.test.mjs` can be extended to cover the new locale.
+
 ## Tests
 
 ```bash
-npm test          # RNG, 36-bit shift, .dat parser, engine, walkthrough
+npm test          # RNG, 36-bit shift, .dat parser, engine, walkthrough, i18n
 ```
 
 The tests compare database counters with the FORTRAN program's own report,
@@ -64,6 +116,7 @@ Comments include line numbers for tracing behavior back to the original.
 | `src/rng.mjs` | `RAN` PRNG (`R*1021 mod 1048576`) and `DATIME` | lines 2842–2898 |
 | `src/text.mjs` | `SPEAK`/`PSPEAK`/`RSPEAK`/`MSPEAK` | lines 1098–2170 |
 | `src/vocab.mjs` | `VOCAB` dictionary lookup | lines 2309–2337 |
+| `src/i18n.mjs` | Localization: `--lang` parsing, locale loading/overlay, string templates | — |
 | `tools/build-dat.mjs` | `advent.dat → data.json` precompiler | lines 1002–1100 |
 | `src/engine.mjs` | State, objects, main loop, verbs, dwarves, cave closing, scoring | main block + 2341–2451 |
 | `src/wizard.mjs` | `START`/`WIZARD`/`HOURS`/`MAINT`/`MOTD` (cave hours) | lines 2452–2816 |
